@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: nl2sql-service
+    env: python
+    buildCommand: pip install -r requirements.txt && python init_sample_db.py
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false

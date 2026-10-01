@@ -1,0 +1,91 @@
+@import url('https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@property --compose-a {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes compose-spin {
+  to {
+    --compose-a: 360deg;
+  }
+}
+
+.compose-ring {
+  opacity: 0;
+  transition: opacity 0.5s ease;
+  background: conic-gradient(
+    from var(--compose-a),
+    rgba(161, 161, 170, 0) 0deg,
+    rgba(161, 161, 170, 0.42) 60deg,
+    rgba(212, 212, 216, 0.62) 108deg,
+    rgba(161, 161, 170, 0) 168deg,
+    rgba(161, 161, 170, 0) 360deg
+  );
+}
+
+.compose-root:focus-within .compose-ring {
+  opacity: 1;
+  animation: compose-spin 5s linear infinite;
+}
+
+.compose-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(228, 228, 231, 0.2) transparent;
+}
+
+.compose-scroll:hover,
+.compose-scroll:focus {
+  scrollbar-color: rgba(228, 228, 231, 0.35) transparent;
+}
+
+.compose-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.compose-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.compose-scroll::-webkit-scrollbar-thumb {
+  background: rgba(228, 228, 231, 0.2);
+  border-radius: 999px;
+}
+
+.compose-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(244, 244, 245, 0.4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .compose-root:focus-within .compose-ring {
+    animation: none;
+  }
+}
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background-color: #09090b;
+  color: #f4f4f5;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-pixel {
+  font-family: 'Pixelify Sans', monospace, sans-serif;
+}
+
+.font-mono {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.bg-grid-pattern {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+  background-size: 24px 24px;
+}

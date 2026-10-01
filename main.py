@@ -3,7 +3,9 @@ import re
 import datetime
 from typing import Any, Dict, List, Optional
 import sqlparse
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, model_validator
 from google import genai
@@ -55,6 +57,10 @@ class QueryRequest(BaseModel):
             or os.getenv("LLM_API_KEY")
             or os.getenv("GEMINI_API_KEY")
         )
+        # Allow testing sample database without requiring an API key
+        if not resolved_key and self.db_connection_uri and "sample.db" in self.db_connection_uri.lower():
+            resolved_key = "SAMPLE_DB_DEMO"
+
         if not resolved_key:
             raise ValueError("An LLM API key must be provided via 'llm_api_key', 'gemini_api_key', or environment variable.")
         # Normalize to both attributes for uniform access
@@ -99,7 +105,71 @@ def clean_sql_string(raw_sql: str) -> str:
     return cleaned.strip()
 
 
+def generate_sql_for_sample_db(user_prompt: str) -> str:
+    prompt_lower = user_prompt.strip().lower()
+
+    # Direct SQL passthrough if user typed SQL
+    if prompt_lower.startswith("select") or prompt_lower.startswith("with"):
+        return user_prompt.strip()
+
+    # Predefined sample queries
+    if "email" in prompt_lower and "user" in prompt_lower:
+        return "SELECT id, name, email, role, created_at FROM users;"
+
+    if "under 50" in prompt_lower or ("stock" in prompt_lower and ("50" in prompt_lower or "desc" in prompt_lower)):
+        return "SELECT * FROM products WHERE stock < 50 ORDER BY price DESC;"
+
+    if "revenue" in prompt_lower or ("order count" in prompt_lower and "user" in prompt_lower):
+        return "SELECT user_id, COUNT(*) AS order_count, ROUND(SUM(total_amount), 2) AS total_revenue FROM orders GROUP BY user_id;"
+
+    if "july" in prompt_lower or "august" in prompt_lower or "between" in prompt_lower:
+        current_year = datetime.date.today().year
+        return f"SELECT * FROM orders WHERE DATE(created_at) BETWEEN '{current_year}-07-25' AND '{current_year}-08-01';"
+
+    # Products queries
+    if any(k in prompt_lower for k in ["product", "item", "stock", "price"]):
+        if any(k in prompt_lower for k in ["expensive", "highest price", "top", "highest"]):
+            return "SELECT * FROM products ORDER BY price DESC LIMIT 5;"
+        if any(k in prompt_lower for k in ["cheapest", "lowest price", "lowest"]):
+            return "SELECT * FROM products ORDER BY price ASC LIMIT 5;"
+        if "category" in prompt_lower:
+            return "SELECT category, COUNT(*) AS total_items, ROUND(AVG(price), 2) AS avg_price FROM products GROUP BY category;"
+        if "stock" in prompt_lower:
+            return "SELECT * FROM products ORDER BY stock ASC;"
+        return "SELECT * FROM products;"
+
+    # Orders queries
+    if any(k in prompt_lower for k in ["order", "sale", "spent", "revenue", "booking"]):
+        if "deliver" in prompt_lower:
+            return "SELECT * FROM orders WHERE status = 'delivered';"
+        if "ship" in prompt_lower:
+            return "SELECT * FROM orders WHERE status = 'shipped';"
+        if "cancel" in prompt_lower:
+            return "SELECT * FROM orders WHERE status = 'cancelled';"
+        if "recent" in prompt_lower or "latest" in prompt_lower:
+            return "SELECT * FROM orders ORDER BY created_at DESC;"
+        return "SELECT * FROM orders;"
+
+    # Users queries
+    if any(k in prompt_lower for k in ["user", "customer", "client", "people", "employee", "member"]):
+        if any(k in prompt_lower for k in ["count", "how many", "total"]):
+            return "SELECT COUNT(*) AS total_users FROM users;"
+        if "customer" in prompt_lower:
+            return "SELECT * FROM users WHERE role = 'customer';"
+        if "admin" in prompt_lower:
+            return "SELECT * FROM users WHERE role = 'admin';"
+        if "staff" in prompt_lower:
+            return "SELECT * FROM users WHERE role = 'staff';"
+        return "SELECT * FROM users;"
+
+    # General fallback
+    return "SELECT * FROM users LIMIT 10;"
+
+
 def generate_sql_query(schema: str, user_prompt: str, llm_api_key: str) -> str:
+    if llm_api_key == "SAMPLE_DB_DEMO":
+        return generate_sql_for_sample_db(user_prompt)
+
     client = genai.Client(api_key=llm_api_key)
 
     current_date = datetime.date.today().strftime("%Y-%m-%d")
@@ -202,7 +272,14 @@ def serialize_row_value(val: Any) -> Any:
 
 
 @app.get("/", tags=["General"])
-async def root():
+@app.get("/api", tags=["General"])
+async def root(request: Request):
+    accept = request.headers.get("accept", "")
+    static_index = os.path.join(os.path.dirname(__file__), "static", "index.html")
+    # If requested by browser HTML client, serve frontend SPA
+    if "text/html" in accept and os.path.exists(static_index):
+        return FileResponse(static_index)
+
     return {
         "service": "NL2SQL Engine (Backend-as-a-Service)",
         "version": "1.0.0",
@@ -213,6 +290,14 @@ async def root():
             "query": "POST /query"
         }
     }
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    icon_path = os.path.join(os.path.dirname(__file__), "static", "favicon.ico")
+    if os.path.exists(icon_path):
+        return FileResponse(icon_path, media_type="image/x-icon")
+    raise HTTPException(status_code=404)
 
 
 @app.get("/health", tags=["General"])
@@ -260,3 +345,14 @@ async def query_endpoint(request: QueryRequest):
     finally:
         if engine:
             engine.dispose()
+
+
+# Mount static assets for frontend bundle
+static_dir = os.path.join(os.path.dirname(__file__), "static")
+assets_dir = os.path.join(static_dir, "assets")
+if os.path.exists(assets_dir):
+    app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+if os.path.exists(static_dir):
+    # Mount root static files (favicon, etc.)
+    app.mount("/static", StaticFiles(directory=static_dir), name="static_root")
+
